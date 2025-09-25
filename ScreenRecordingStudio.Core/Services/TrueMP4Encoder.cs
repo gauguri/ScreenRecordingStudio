@@ -12,6 +12,7 @@ namespace ScreenRecordingStudio.Core.Services
     public class TrueMp4Encoder : IVideoEncoderService
     {
         private readonly List<byte[]> _frameData = new();
+        private readonly List<uint> _chunkOffsets = new();
         private bool _isEncoding = false;
         private string _outputPath;
         private RecordingSettings _settings;
@@ -41,6 +42,7 @@ namespace ScreenRecordingStudio.Core.Services
                 lock (_lockObject)
                 {
                     _frameData.Clear();
+                    _chunkOffsets.Clear();
                 }
 
                 return true;
@@ -127,6 +129,8 @@ namespace ScreenRecordingStudio.Core.Services
                     return;
                 }
 
+                _chunkOffsets.Clear();
+
                 using var writer = new BinaryWriter(new FileStream(_outputPath, FileMode.Create));
 
                 // Create a proper MP4 file structure
@@ -170,9 +174,15 @@ namespace ScreenRecordingStudio.Core.Services
             WriteUInt32BE(writer, 0); // Size placeholder
             WriteStringBE(writer, "mdat"); // Type
 
-            // Write all frame data
+            // Write all frame data and track chunk offsets per frame
             foreach (var frameData in _frameData)
             {
+                var frameOffset = writer.BaseStream.Position;
+                if (frameOffset > uint.MaxValue)
+                {
+                    throw new InvalidOperationException("Recording exceeded 32-bit chunk offset capacity");
+                }
+                _chunkOffsets.Add((uint)frameOffset);
                 writer.Write(frameData);
             }
 
@@ -408,7 +418,7 @@ namespace ScreenRecordingStudio.Core.Services
             WriteUInt32BE(writer, 0); // Version and flags
             WriteUInt32BE(writer, 1); // Entry count
             WriteUInt32BE(writer, 1); // First chunk
-            WriteUInt32BE(writer, (uint)_frameData.Count); // Samples per chunk
+            WriteUInt32BE(writer, 1); // Samples per chunk
             WriteUInt32BE(writer, 1); // Sample description index
         }
 
@@ -428,11 +438,15 @@ namespace ScreenRecordingStudio.Core.Services
 
         private void WriteStcoAtom(BinaryWriter writer)
         {
-            WriteUInt32BE(writer, 20); // Size
+            WriteUInt32BE(writer, (uint)(16 + _chunkOffsets.Count * 4)); // Size
             WriteStringBE(writer, "stco"); // Type
             WriteUInt32BE(writer, 0); // Version and flags
-            WriteUInt32BE(writer, 1); // Entry count
-            WriteUInt32BE(writer, 32); // Chunk offset (mdat starts at byte 32)
+            WriteUInt32BE(writer, (uint)_chunkOffsets.Count); // Entry count
+
+            foreach (var offset in _chunkOffsets)
+            {
+                WriteUInt32BE(writer, offset); // Chunk offset for each frame
+            }
         }
 
         private void UpdateMdatSize(BinaryWriter writer, long mdatPosition)
