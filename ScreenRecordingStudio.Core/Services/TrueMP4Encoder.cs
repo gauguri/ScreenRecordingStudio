@@ -18,6 +18,7 @@ namespace ScreenRecordingStudio.Core.Services
         private readonly object _lockObject = new();
         private int _width, _height;
         private DateTime _startTime;
+        private long _mdatDataOffset;
 
         public bool IsEncoding => _isEncoding;
 
@@ -169,6 +170,7 @@ namespace ScreenRecordingStudio.Core.Services
             var mdatStart = writer.BaseStream.Position;
             WriteUInt32BE(writer, 0); // Size placeholder
             WriteStringBE(writer, "mdat"); // Type
+            _mdatDataOffset = writer.BaseStream.Position; // Actual media data offset
 
             // Write all frame data
             foreach (var frameData in _frameData)
@@ -432,7 +434,7 @@ namespace ScreenRecordingStudio.Core.Services
             WriteStringBE(writer, "stco"); // Type
             WriteUInt32BE(writer, 0); // Version and flags
             WriteUInt32BE(writer, 1); // Entry count
-            WriteUInt32BE(writer, 32); // Chunk offset (mdat starts at byte 32)
+            WriteUInt32BE(writer, (uint)_mdatDataOffset); // Chunk offset (start of mdat data)
         }
 
         private void UpdateMdatSize(BinaryWriter writer, long mdatPosition)
