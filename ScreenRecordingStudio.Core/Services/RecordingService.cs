@@ -273,31 +273,38 @@ namespace ScreenRecordingStudio.Core.Services
 
         private async void OnFrameCaptured(object sender, FrameCapturedEventArgs e)
         {
-            if (_currentSession != null && IsRecording)
+            if (_currentSession != null && IsRecording && e.Frame != null)
             {
-                // Send frame to video encoder
-                await _videoEncoderService.AddFrameAsync(e.Frame);
-
-                _currentSession.FrameCount++;
-
-                // Update file size (approximate)
                 try
                 {
-                    var fileInfo = new FileInfo(_currentSession.OutputFilePath);
-                    if (fileInfo.Exists)
-                    {
-                        _currentSession.FileSizeBytes = fileInfo.Length;
-                    }
-                }
-                catch { /* Ignore file access errors during recording */ }
+                    // Send frame to video encoder
+                    await _videoEncoderService.AddFrameAsync(e.Frame);
 
-                // Raise progress event
-                RecordingProgress?.Invoke(this, new RecordingProgressEventArgs
+                    _currentSession.FrameCount++;
+
+                    // Update file size (approximate)
+                    try
+                    {
+                        var fileInfo = new FileInfo(_currentSession.OutputFilePath);
+                        if (fileInfo.Exists)
+                        {
+                            _currentSession.FileSizeBytes = fileInfo.Length;
+                        }
+                    }
+                    catch { /* Ignore file access errors during recording */ }
+
+                    // Raise progress event
+                    RecordingProgress?.Invoke(this, new RecordingProgressEventArgs
+                    {
+                        ElapsedTime = _currentSession.Duration,
+                        FileSizeBytes = _currentSession.FileSizeBytes,
+                        FrameCount = _currentSession.FrameCount
+                    });
+                }
+                finally
                 {
-                    ElapsedTime = _currentSession.Duration,
-                    FileSizeBytes = _currentSession.FileSizeBytes,
-                    FrameCount = _currentSession.FrameCount
-                });
+                    e.Frame.Dispose();
+                }
             }
         }
 
